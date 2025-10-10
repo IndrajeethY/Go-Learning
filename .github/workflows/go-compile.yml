@@ -1,0 +1,95 @@
+name: Auto Compile Go Code
+
+on:
+  push:
+    paths:
+      - '**.go'
+  pull_request:
+    paths:
+      - '**.go'
+
+jobs:
+  compile-go-code:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Discover and compile Go code in subfolders
+        run: |
+          echo "🔍 Discovering subfolders with Go files..."
+
+          # Flag to track if any compilation fails
+          failed=0
+          build_count=0
+
+          # Find all directories (depth 1) that contain .go files
+          for dir in */; do
+            # Remove trailing slash
+            folder="${dir%/}"
+
+            # Skip hidden directories and common non-topic folders
+            if [[ "$folder" == .* ]]; then
+              continue
+            fi
+
+            # Check if directory contains .go files
+            if ls "$folder"/*.go 2>/dev/null | grep -q ".go"; then
+              echo ""
+              echo "📁 Found Go files in: $folder"
+
+              # Change to the directory
+              cd "$folder"
+
+              # Check if there's a go.mod (module-based project)
+              if [ -f "go.mod" ]; then
+                echo "  Building as Go module..."
+                if go build .; then
+                  echo "  ✅ Build successful for $folder"
+                  ((build_count++))
+                else
+                  echo "  ❌ Build failed for $folder"
+                  failed=1
+                fi
+              else
+                # Build each .go file individually
+                echo "  Building individual Go files..."
+                for gofile in *.go; do
+                  if [ -f "$gofile" ]; then
+                    echo "    Building $gofile..."
+                    if go build "$gofile"; then
+                      echo "    ✅ Build successful for $gofile"
+                      ((build_count++))
+                      # Clean up the binary
+                      binary="${gofile%.go}"
+                      rm -f "$binary"
+                    else
+                      echo "    ❌ Build failed for $gofile"
+                      failed=1
+                    fi
+                  fi
+                done
+              fi
+
+              # Go back to root
+              cd ..
+            fi
+          done
+
+          echo ""
+          echo "📊 Summary: Compiled $build_count file(s)/module(s)"
+
+          if [ $failed -eq 1 ]; then
+            echo "❌ One or more builds failed"
+            exit 1
+          elif [ $build_count -eq 0 ]; then
+            echo "⚠️ No Go files found to compile"
+          else
+            echo "✅ All builds successful"
+          fi

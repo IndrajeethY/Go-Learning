@@ -1,0 +1,127 @@
+name: Daily Topic Issue Creation
+
+on:
+  schedule:
+    # Run daily at 6:00 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  create-daily-topic-issue:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history to detect latest folder
+
+      - name: Detect most recent topic folder
+        id: detect-folder
+        run: |
+          echo "🔍 Detecting most recently added topic folder..."
+
+          # Get all directories (depth 1, excluding hidden)
+          # Topic folders typically follow pattern: XX-topic-name
+          folders=$(ls -d */ 2>/dev/null | \
+                    grep -E '^[0-9]{2}-' | \
+                    sort -V || echo "")
+
+          if [ -z "$folders" ]; then
+            echo "⚠️ No topic folders found"
+            echo "folder_name=unknown-topic" >> $GITHUB_OUTPUT
+            echo "folder_display=Unknown Topic" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Method 1: Use the last folder by name
+          latest_by_name=$(echo "$folders" | \
+                           tail -1 | \
+                           sed 's/\/$//')
+
+          # Method 2: Use git log to find recently modified folder
+          # Get the most recently committed folder
+          latest_by_git=$(git log --pretty=format: \
+                          --name-only --diff-filter=A | \
+                          grep -E '^[0-9]{2}-.*/' | \
+                          sed 's|/.*||' | \
+                          head -1 || echo "")
+
+          # Prefer git-detected folder if available
+          if [ -n "$latest_by_git" ] && [ -d "$latest_by_git" ]; then
+            latest_folder="$latest_by_git"
+            echo "Using git-detected folder: $latest_folder"
+          else
+            latest_folder="$latest_by_name"
+            echo "Using name-based detection: $latest_folder"
+          fi
+
+          echo "📂 Latest topic folder: $latest_folder"
+
+          # Extract a display name from the folder name
+          # Convert "01-basics" to "Basics"
+          display_name=$(echo "$latest_folder" | \
+                         sed 's/^[0-9]*-//' | \
+                         sed 's/-/ /g' | \
+                         sed 's/\b\(.\)/\u\1/g')
+
+          echo "folder_name=$latest_folder" >> $GITHUB_OUTPUT
+          echo "folder_display=$display_name" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Issue for Topic
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOLDER_NAME: ${{ steps.detect-folder.outputs.folder_name }}
+          FOLDER_DISPLAY: ${{ steps.detect-folder.outputs.folder_display }}
+        run: |
+          echo "📝 Creating issue for topic: $FOLDER_DISPLAY"
+
+          # Create the issue using GitHub CLI with inline body
+          gh issue create \
+            --title "Learning Progress: $FOLDER_DISPLAY" \
+            --label "daily-topic" \
+            --body "## 📚 Learning Progress: $FOLDER_DISPLAY
+
+          This is an auto-generated issue for tracking daily progress on the **$FOLDER_DISPLAY** topic.
+
+          ### 📁 Folder
+          \`$FOLDER_NAME\`
+
+          ### 🎯 Purpose
+          Use this issue to track:
+          - Learning objectives
+          - Daily progress updates
+          - Challenges encountered
+          - Resources used
+          - Code examples completed
+
+          ### 📝 How to Update
+          Add your daily updates as comments to this issue with the following format:
+
+          \`\`\`markdown
+          #### Date: YYYY-MM-DD
+
+          **What I Learned:**
+          - Topic 1
+          - Topic 2
+
+          **Code Examples:**
+          - Example descriptions
+
+          **Challenges:**
+          - Any difficulties faced
+
+          **Resources Used:**
+          - Links to resources
+
+          **Time Spent:** X hours
+          \`\`\`
+
+          ---
+          🤖 *This issue was automatically created by the Daily Topic Issue workflow*"
+
+          echo "✅ Issue created successfully"

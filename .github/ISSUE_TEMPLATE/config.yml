@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📚 Official Go Documentation
+    url: https://go.dev/doc/
+    about: Official Go programming language documentation
+  - name: 🎓 A Tour of Go
+    url: https://go.dev/tour/
+    about: Interactive introduction to Go
+  - name: 💬 Go Community
+    url: https://go.dev/help/
+    about: Get help from the Go community
